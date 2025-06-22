@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stopwatch</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/png" href="time-tracking.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #10b981; /* Emerald green color scheme */
+            --secondary-color: #34d399;
+            --dark-bg: #1f2937;
+            --dark-text: #f9fafb;
+            --light-bg: #f9fafb;
+            --light-text: #1f2937;
+        }
+
+        body.dark {
+            --bg-color: var(--dark-bg);
+            --text-color: var(--dark-text);
+            --card-bg: #374151;
+        }
+
+        body.light {
+            --bg-color: var(--light-bg);
+            --text-color: var(--light-text);
+            --card-bg: #ffffff;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .highlight {
+            animation: highlight 1.5s ease-out;
+        }
+
+        @keyframes highlight {
+            0% { background-color: rgba(16, 185, 129, 0.3); }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body class="light min-h-screen flex items-center justify-center p-4">
+    <div class="card rounded-2xl max-w-md w-full p-6 sm:p-8">
+        <!-- Header with theme toggle -->
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold">Stopwatch</h1>
+            <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition">
+                <i class="fas fa-moon dark:hidden"></i>
+                <i class="fas fa-sun hidden dark:inline"></i>
+            </button>
+        </div>
+
+        <!-- Timer display -->
+        <div class="text-center mb-8">
+            <div id="time-display" class="text-5xl sm:text-6xl font-mono font-bold mb-4">00:00:00.0</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex justify-center space-x-4 mb-8">
+            <button id="start-btn" class="bg-emerald-500 hover:bg-emerald-600 text-white py-3 px-6 rounded-full font-medium transition flex items-center">
+                <i class="fas fa-play mr-2"></i> Start
+            </button>
+            <button id="stop-btn" disabled class="bg-gray-500 hover:bg-gray-600 text-white py-3 px-6 rounded-full font-medium transition flex items-center">
+                <i class="fas fa-stop mr-2"></i> Stop
+            </button>
+            <button id="reset-btn" disabled class="bg-red-500 hover:bg-red-600 text-white py-3 px-6 rounded-full font-medium transition flex items-center">
+                <i class="fas fa-redo mr-2"></i> Reset
+            </button>
+        </div>
+
+        <!-- Stop times section -->
+        <div class="border-t pt-4 border-gray-200 dark:border-gray-700">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="font-medium">Stop Times</h2>
+                <div>
+                    <span class="text-sm text-gray-500">Total: <span id="total-stops">0</span></span>
+                </div>
+            </div>
+            <div id="stops-container" class="max-h-64 overflow-y-auto pr-2">
+                <div id="no-stops" class="text-center py-4 text-gray-500">
+                    No stop times recorded yet
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const timeDisplay = document.getElementById('time-display');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const themeToggle = document.getElementById('theme-toggle');
+        const stopsContainer = document.getElementById('stops-container');
+        const noStops = document.getElementById('no-stops');
+        const totalStops = document.getElementById('total-stops');
+
+        // Variables
+        let startTime = 0;
+        let elapsedTime = 0;
+        let timerInterval;
+        let isRunning = false;
+        let stopTimes = [];
+        
+        // Theme toggle
+        themeToggle.addEventListener('click', () => {
+            if (document.body.classList.contains('dark')) {
+                document.body.classList.remove('dark');
+                document.body.classList.add('light');
+                localStorage.setItem('theme', 'light');
+            } else {
+                document.body.classList.remove('light');
+                document.body.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+
+        // Check for saved theme
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.body.classList.remove('light');
+            document.body.classList.add('dark');
+        }
+
+        // Initialize from localStorage
+        function initFromLocalStorage() {
+            const savedTimer = JSON.parse(localStorage.getItem('stopwatchData'));
+            if (savedTimer) {
+                elapsedTime = savedTimer.elapsedTime;
+                isRunning = savedTimer.isRunning;
+                stopTimes = savedTimer.stopTimes || [];
+                
+                if (isRunning) {
+                    startTime = Date.now() - elapsedTime;
+                    startTimer();
+                    startBtn.innerHTML = '<i class="fas fa-pause mr-2"></i> Pause';
+                } else {
+                    displayTime(elapsedTime);
+                }
+                
+                if (stopTimes.length > 0) {
+                    noStops.style.display = 'none';
+                    stopTimes.forEach((time, index) => {
+                        addStopToUI(time, index + 1);
+                    });
+                    totalStops.textContent = stopTimes.length;
+                }
+            }
+        }
+
+        // Start timer
+        function startTimer() {
+            isRunning = true;
+            startTime = Date.now() - elapsedTime;
+            timerInterval = setInterval(updateTimer, 100);
+            
+            // Update button states
+            startBtn.innerHTML = '<i class="fas fa-pause mr-2"></i> Pause';
+            startBtn.className = startBtn.className.replace('bg-emerald-500 hover:bg-emerald-600', 'bg-yellow-500 hover:bg-yellow-600');
+            stopBtn.disabled = false;
+            resetBtn.disabled = false;
+            
+            saveToLocalStorage();
+        }
+
+        // Stop timer
+        function stopTimer() {
+            if (!isRunning) return;
+            
+            isRunning = false;
+            clearInterval(timerInterval);
+            
+            // Record stop time
+            stopTimes.unshift(elapsedTime);
+            addStopToUI(elapsedTime, stopTimes.length);
+            noStops.style.display = 'none';
+            totalStops.textContent = stopTimes.length;
+            
+            // Update button states
+            startBtn.innerHTML = '<i class="fas fa-play mr-2"></i> Resume';
+            startBtn.className = startBtn.className.replace('bg-yellow-500 hover:bg-yellow-600', 'bg-emerald-500 hover:bg-emerald-600');
+            stopBtn.disabled = true;
+            
+            saveToLocalStorage();
+        }
+
+        // Reset timer
+        function resetTimer() {
+            isRunning = false;
+            clearInterval(timerInterval);
+            elapsedTime = 0;
+            displayTime(elapsedTime);
+            
+            // Update button states
+            startBtn.innerHTML = '<i class="fas fa-play mr-2"></i> Start';
+            startBtn.className = startBtn.className.replace('bg-yellow-500 hover:bg-yellow-600', 'bg-emerald-500 hover:bg-emerald-600');
+            stopBtn.disabled = true;
+            resetBtn.disabled = true;
+            
+            // Clear stop times
+            stopTimes = [];
+            stopsContainer.innerHTML = '';
+            noStops.style.display = 'block';
+            totalStops.textContent = '0';
+            
+            saveToLocalStorage();
+        }
+
+        // Add stop to UI
+        function addStopToUI(stopTime, stopNumber) {
+            const stopElement = document.createElement('div');
+            stopElement.className = 'flex justify-between items-center py-2 px-3 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition highlight';
+            
+            stopElement.innerHTML = `
+                <div class="flex items-center">
+                    <span class="font-medium w-8">${stopNumber}</span>
+                    <span class="text-xs text-gray-500">${new Date().toLocaleTimeString()}</span>
+                </div>
+                <span class="font-mono font-medium">${formatTime(stopTime)}</span>
+            `;
+            
+            // Insert at the beginning
+            if (stopsContainer.firstChild !== noStops) {
+                stopsContainer.insertBefore(stopElement, stopsContainer.firstChild);
+            } else {
+                stopsContainer.insertBefore(stopElement, noStops);
+            }
+        }
+
+        // Update timer display
+        function updateTimer() {
+            elapsedTime = Date.now() - startTime;
+            displayTime(elapsedTime);
+            saveToLocalStorage();
+        }
+
+        // Display time in HH:MM:SS.S format
+        function displayTime(time) {
+            const hours = Math.floor(time / 3600000);
+            const minutes = Math.floor((time % 3600000) / 60000);
+            const seconds = Math.floor((time % 60000) / 1000);
+            const milliseconds = Math.floor((time % 1000) / 100);
+            
+            timeDisplay.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds}`;
+        }
+
+        // Format time for display
+        function formatTime(time) {
+            const hours = Math.floor(time / 3600000);
+            const minutes = Math.floor((time % 3600000) / 60000);
+            const seconds = Math.floor((time % 60000) / 1000);
+            const milliseconds = Math.floor(time % 1000);
+            
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0').slice(0, 1)}`;
+        }
+
+        // Save to localStorage
+        function saveToLocalStorage() {
+            const timerData = {
+                elapsedTime: elapsedTime,
+                isRunning: isRunning,
+                stopTimes: stopTimes
+            };
+            localStorage.setItem('stopwatchData', JSON.stringify(timerData));
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            switch (e.key.toLowerCase()) {
+                case 's': // Start/Stop
+                    if (isRunning) stopTimer();
+                    else startTimer();
+                    break;
+                case 'r': // Reset
+                    resetTimer();
+                    break;
+            }
+        });
+
+        // Event listeners
+        startBtn.addEventListener('click', () => {
+            if (isRunning) stopTimer();
+            else startTimer();
+        });
+
+        stopBtn.addEventListener('click', stopTimer);
+        resetBtn.addEventListener('click', resetTimer);
+
+        // Initialize
+        initFromLocalStorage();
+    </script>
+</body>
+</html>
